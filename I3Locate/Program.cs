@@ -13,46 +13,235 @@ namespace I3Locate
     class Program
     {
         static private List<Scan> WirelessScans;
+        static private DateTime scanStart;
+        static private DateTime scanEnd;
         static private string publicIP = "";
-        static private string hostname;
+        static private string hostname = "";
+        static private string whoIsInfo = "";
         static private readonly string webcamPicturePath = GetTempFolder() + "webcam.jpg";
         static private readonly string screenshotPicturePath = GetTempFolder() + "screenshot.jpg";
-
+        static private readonly string reportPath = GetTempFolder() + "Report.txt";
+        static private GoogleLocationResult googleResult;
+        static private List<ComputerIPInterface> addresses = new List<ComputerIPInterface>();
+        static private string modifiedFiles = "";
+        
         static void Main(string[] args)
         {
+            scanStart = DateTime.Now;
             WirelessScans = GetLocalSSIDs();
-            List<string> coordinates = GetGeoLocation(WirelessScans);
-
+            googleResult = GetGeoLocation(WirelessScans);
             TakeScreenshot();
             TakeWebCamPicture();
             publicIP = GetIPPublicAddress();
-            List<ComputerIPAddress> address = GetLocalIPAddresses();
+            addresses = GetMachineIPInformation();
+            if (!string.IsNullOrEmpty(publicIP))
+            {
+                whoIsInfo = GetIPInfo(publicIP);
+            }
             hostname = GetHostName();
+
+            scanEnd = DateTime.Now;
+            ProduceReport();
         }
 
-        static private List<string> GetGeoLocation(List<Scan> scans)
+        private static string GetIPInfo(string ip)
+        {
+
+            WebClient wc = new WebClient();
+
+            StringBuilder sb = new StringBuilder();
+
+            wc.Headers.Set("User-Agent", "Mozilla/5.0 (Windows; U; Windows NT 6.0; en-US; rv:1.9.0.19) Gecko/2010031422 Firefox/3.0.19 ( .NET CLR 3.5.30729; .NET4.0E)");
+
+            string html = wc.DownloadString("http://www.networksolutions.com/whois/results.jsp?ip=" + ip);
+
+            string info = GetStringInBetween("<pre style=\"width:550px;overflow:hidden;\">", "</pre>", html);
+            info = Regex.Replace(info, "&nbsp;", " ");
+
+            string[] lines = info.Split(new string[] { "\n" }, StringSplitOptions.RemoveEmptyEntries);
+            foreach(string obj in lines)
+            {
+                sb.AppendLine(obj);
+            }
+            return sb.ToString();
+        }
+
+        private static string GetStringInBetween(string strBegin, string strEnd, string strSource)
+        {
+            string result = "";
+            int iIndexOfBegin = strSource.IndexOf(strBegin);
+
+            if (iIndexOfBegin != -1)
+            {
+                strSource = strSource.Substring(iIndexOfBegin + strBegin.Length);
+
+                int iEnd = strSource.IndexOf(strEnd);
+
+                if (iEnd != -1) result = strSource.Substring(0, iEnd);
+            }
+
+            return result;
+        }
+
+        public static string FindModifiedFiles()
+        {
+            //Not implemented
+            if (Directory.Exists(@"c:\Users"))
+            {
+                DirectoryInfo directory = new DirectoryInfo(@"c:\Users");
+                DateTime from_date = DateTime.Now.AddDays(-3);
+                DateTime to_date = DateTime.Now;
+                //var files = directory.GetFiles()
+                //  .Where(file => file.LastWriteTime >= from_date && file.LastWriteTime <= to_date);
+                return "";
+            }
+
+            return "";
+        }
+
+        public static TimeSpan GetUptime()
+        {
+            System.DateTime SystemStartTime = DateTime.Now.AddMilliseconds(-Environment.TickCount);
+            return DateTime.Now - SystemStartTime;
+        }
+
+        private static void ProduceReport()
+        {
+            StringBuilder sb = new StringBuilder();
+            sb.AppendLine("Your Computer came online and reported in.");
+            sb.AppendLine("");
+            sb.AppendLine("Scan initiated at: " + scanStart.ToString() + " and ended at: " + scanEnd.ToString());
+            sb.AppendLine("");
+            if (googleResult != null)
+            {
+                if (!string.IsNullOrEmpty(googleResult.Latitude) && !string.IsNullOrEmpty(googleResult.Longitude))
+                {
+                    sb.AppendLine("########################################################");
+                    sb.AppendLine("# Geo Location information");
+                    sb.AppendLine("########################################################");
+                    sb.AppendLine("");
+                    sb.AppendLine("Accuracy of this information within meters: " + googleResult.Accuracy);
+                    sb.AppendLine("");
+                    sb.AppendLine("Latitude: " + googleResult.Latitude);
+                    sb.AppendLine("");
+                    sb.AppendLine("Longitude: " + googleResult.Longitude);
+                    sb.AppendLine("");
+                    sb.AppendLine("Google Maps URL: " + googleResult.GetGoogleMap());
+                    sb.AppendLine("");
+                }
+            }
+            
+            if (addresses.Count > 0 || !string.IsNullOrEmpty(publicIP) || !string.IsNullOrEmpty(hostname))
+            {
+                sb.AppendLine("########################################################");
+                sb.AppendLine("# Current Network Information");
+                sb.AppendLine("########################################################");
+                sb.AppendLine("");
+                if (!string.IsNullOrEmpty(hostname))
+                {
+                    sb.AppendLine("Hostname: " + hostname);
+                    sb.AppendLine("");
+                }
+                if (!string.IsNullOrEmpty(publicIP))
+                {
+                    sb.AppendLine("Public IP Address: " + publicIP);
+                    sb.AppendLine("");
+                }
+                if(addresses.Count > 0)
+                {
+                    foreach(ComputerIPInterface myInterface in addresses)
+                    {
+                        foreach (string item in myInterface.IPAddress)
+	                    {
+                            sb.AppendLine("Local IP Address: " + item);
+                            sb.AppendLine("");
+	                    }
+
+                        foreach (string item in myInterface.Mask)
+                        {
+                            sb.AppendLine("Subnet Mask: " + item);
+                            sb.AppendLine("");
+                        }
+
+                        foreach (string item in myInterface.Gateway)
+                        {
+                            sb.AppendLine("Gateway: " + item);
+                            sb.AppendLine("");
+                        }
+
+                        foreach (string item in myInterface.DNS)
+                        {
+                            sb.AppendLine("DNS: " + item);
+                            sb.AppendLine("");
+                        }
+                    }
+                }
+
+                if(!string.IsNullOrEmpty(whoIsInfo))
+                {
+                    sb.Append(whoIsInfo);
+                    sb.AppendLine("");
+                }
+            }
+
+            sb.AppendLine("########################################################");
+            sb.AppendLine("# System information");
+            sb.AppendLine("########################################################");
+            sb.AppendLine("");
+            sb.AppendLine("Start up time: " + DateTime.Now.AddMilliseconds(-Environment.TickCount).ToString());
+            sb.AppendLine("");
+
+            StreamWriter file = new StreamWriter(reportPath); 
+            file.WriteLine(sb.ToString());
+            file.Flush();
+            file.Close();
+        }
+
+        static private GoogleLocationResult GetGeoLocation(List<Scan> scans)
         {
             //https://maps.googleapis.com/maps/api/browserlocation/json?browser=firefox&sensor=true&wifi=mac:[mac_address]|ssid:[ssid_name]|ss:[rssi]&wifi=mac:[mac_address]|ssid:[ssid_name]|ss:[rssi]
 
             //GET /maps/api/browserlocation/json?browser=firefox&sensor=true&wifi=mac:01-24-7c-bc-51-46%7Cssid:3x2x%7Css:-37&wifi=mac:09-86-3b-31-97-b2%7Cssid:belkin.7b2%7Css:-47&wifi=mac:28-cf-da-ba-be-13%7Cssid:HERESIARCH%20NETWORK%7Css:-49&wifi=mac:2b-cf-da-ba-be-10%7Cssid: ARCH%20GUESTS%7Css:-52&wifi=mac:08-56-3b-2b-e1-a8%7Cssid:belkin.1a8%7Css:-59&wifi=mac:02-1e-64-fd-df-67%7Cssid:Brown%20Cow%7Css:-59&wifi=mac:2a-cf-df-ba-be-10%7Cssid: ARCH%20GUESTS%7Css:-59 HTTP/1.1
-            try
+            string attributes = "";
+            foreach (Scan myScan in scans)
             {
-                foreach (Scan myScan in scans)
+                foreach (Reading myReading in myScan.ReadingList)
                 {
-                    foreach (Reading myReading in myScan.Readings)
+                    if (!string.IsNullOrEmpty(myReading.SSID) && !string.IsNullOrEmpty(myReading.MAC))
                     {
-                        string url = @"https://maps.googleapis.com/maps/api/browserlocation/json?browser=firefox&sensor=true&wifi=mac:" + myReading.MAC.Replace(":", "-");
-
-                        WebRequest request = HttpWebRequest.Create(url);
-
-                        WebResponse response = request.GetResponse();
-
-                        StreamReader reader = new StreamReader(response.GetResponseStream());
-
-                        string urlText = reader.ReadToEnd();
+                        string addThis = "&wifi=mac:" + myReading.MAC.Replace(":", "-") + "|ssid:" + myReading.SSID + "|ss:" + myReading.RSSI.ToString();
+                        if ((83 + attributes.Length + addThis.Length) < 512)
+                        {
+                            attributes += attributes + addThis;
+                        }
+                        //attributes += attributes + "&wifi=mac:" + myReading.MAC.Replace(":", "-") + "|ssid:" + myReading.SSID + "|ss:" + myReading.RSSI.ToString();
                     }
                 }
-                return null;
+            }
+            
+            try
+            {
+                //this is 83 characters
+                string url = @"https://maps.googleapis.com/maps/api/browserlocation/json?browser=true&sensor=true$" + attributes;
+
+                string length = url.Length.ToString();
+
+                WebRequest request = HttpWebRequest.Create(url);
+
+                WebResponse response = request.GetResponse();
+
+                StreamReader reader = new StreamReader(response.GetResponseStream());
+
+                string urlText = reader.ReadToEnd();
+
+                if (urlText.Contains("OK"))
+                {
+                    return new GoogleLocationResult(urlText);
+                }
+                else
+                {
+                    return null;
+                }
             }
             catch (Exception exc)
             {
@@ -94,63 +283,52 @@ namespace I3Locate
             return Dns.GetHostName();
         }
 
-        static private string GetDnsAdress()
+        static private List<ComputerIPInterface> GetMachineIPInformation()
         {
             NetworkInterface[] networkInterfaces = NetworkInterface.GetAllNetworkInterfaces();
 
+            List<ComputerIPInterface> colAddresses = new List<ComputerIPInterface>();
+
             foreach (NetworkInterface networkInterface in networkInterfaces)
             {
-                if (networkInterface.OperationalStatus == OperationalStatus.Up)
+                if (networkInterface.OperationalStatus == OperationalStatus.Up && (networkInterface.NetworkInterfaceType == NetworkInterfaceType.Wireless80211 || networkInterface.NetworkInterfaceType == NetworkInterfaceType.Ethernet))
                 {
+                    List<string> unicastIP = new List<string>();
+                    List<string> dnsIPs = new List<string>();
+                    List<string> subnetMask = new List<string>();
+                    List<string> gatewayIP = new List<string>();
+
                     IPInterfaceProperties ipProperties = networkInterface.GetIPProperties();
                     IPAddressCollection dnsAddresses = ipProperties.DnsAddresses;
+                    GatewayIPAddressInformationCollection gatewayAddresses = ipProperties.GatewayAddresses;
+                    UnicastIPAddressInformationCollection ipAddresses = ipProperties.UnicastAddresses;
 
-                    foreach (IPAddress dnsAdress in dnsAddresses)
+
+                    foreach (UnicastIPAddressInformation info in ipAddresses) 
                     {
-                        return dnsAdress.ToString();
+                        if(info.PrefixOrigin == PrefixOrigin.Dhcp || info.PrefixOrigin == PrefixOrigin.Manual)
+                        {
+                            unicastIP.Add(info.Address.ToString());
+                            subnetMask.Add(info.IPv4Mask.ToString());
+                        }
                     }
+
+                    foreach (IPAddress address in dnsAddresses)
+                    {
+                        dnsIPs.Add(address.ToString());
+                    }
+
+                    foreach (GatewayIPAddressInformation gateway in gatewayAddresses)
+                    {
+                        gatewayIP.Add(gateway.Address.ToString());
+                    }
+
+                    colAddresses.Add(new ComputerIPInterface(unicastIP, subnetMask, gatewayIP, dnsIPs));
                 }
             }
 
-            throw new InvalidOperationException("Unable to find DNS Address");
-        }
+            return colAddresses;
 
-        static private List<ComputerIPAddress> GetLocalIPAddresses()
-        {
-            
-            List<ComputerIPAddress> address = new List<ComputerIPAddress>();
-
-            IPHostEntry host;
-            host = Dns.GetHostEntry(Dns.GetHostName());
-            foreach (IPAddress ip in host.AddressList)
-            {
-                if (ip.AddressFamily.ToString() == "InterNetwork")
-                {
-                    address.Add(new ComputerIPAddress(ip.ToString(), ReturnSubnetmask(ip.ToString()), "", GetDnsAdress()));
-                }
-            }
-
-            return address;
-        }
-
-        static public string ReturnSubnetmask(String ipaddress)
-        {
-            uint firstOctet = ReturnFirtsOctet(ipaddress);
-            if (firstOctet >= 0 && firstOctet <= 127)
-                return "255.0.0.0";
-            else if (firstOctet >= 128 && firstOctet <= 191)
-                return "255.255.0.0";
-            else if (firstOctet >= 192 && firstOctet <= 223)
-                return "255.255.255.0";
-            else return "0.0.0.0";
-        }
-
-        static public uint ReturnFirtsOctet(string ipAddress)
-        {
-            System.Net.IPAddress iPAddress = System.Net.IPAddress.Parse(ipAddress);
-            byte[] byteIP = iPAddress.GetAddressBytes();
-            uint ipInUint = (uint)byteIP[0];
-            return ipInUint;
         }
 
         static private string GetExecutionPath()
@@ -206,161 +384,4 @@ namespace I3Locate
 
     }
 
-    class ComputerIPAddress
-    {
-        private string _IPAddress = "";
-        private string _Mask = "";
-        private string _Gateway = "";
-        private string _DNS = "";
-
-        public ComputerIPAddress(string IPAddress, string Mask, string Gateway, string DNS)
-        {
-            this.IPAddress = IPAddress;
-            this.Mask = Mask;
-            this.Gateway = Gateway;
-            this.DNS = DNS;
-        }
-
-        public string IPAddress
-        {
-            get {return _IPAddress;}
-            set {_IPAddress = value;}
-        }
-
-        public string Mask
-        {
-            get {return _Mask;}
-            set {_Mask = value;}
-        }
-
-        public string Gateway
-        {
-            get {return _Gateway;}
-            set {_Gateway = value;}
-        }
-
-        public string DNS
-        {
-            get {return _DNS;}
-            set {_DNS = value;}
-        }
-    }
-    
-    public class WifiScanner
-    {
-        /// <summary>
-        /// A wireless lan client.
-        /// </summary>
-        private static readonly WlanClient WLAN_CLIENT = new WlanClient();
-
-        private WifiScanner() { }
-
-        private static WlanClient.WlanInterface GetNetworkInterfaceFromId(String id)
-        {
-            WlanClient.WlanInterface networkInterface = null;
-            if (!String.IsNullOrEmpty(id))
-            {
-                foreach (WlanClient.WlanInterface wlanIface in WLAN_CLIENT.Interfaces)
-                {
-                    if (id == wlanIface.NetworkInterface.Id)
-                    {
-                        networkInterface = wlanIface;
-                    }
-                }
-            }
-            return networkInterface;
-        }
-
-        private static string ConvertAddressBytesToString(byte[] macAddr)
-        {
-            string mac = "";
-            if (macAddr != null)
-            {
-                var macAddrLen = (uint)macAddr.Length;
-                var str = new string[(int)macAddrLen];
-                for (int i = 0; i < macAddrLen; i++)
-                {
-                    str[i] = macAddr[i].ToString("x2");
-                }
-                mac = string.Join(":", str).ToUpper();
-            }
-            return mac; 
-        }
-
-        static public List<WifiInterface> GetAvailableWLANInterfaces()
-        {
-            List<WifiInterface> interfaceList = new List<WifiInterface>();
-            foreach (WlanClient.WlanInterface wlanIface in WLAN_CLIENT.Interfaces)
-            {
-                string id = wlanIface.NetworkInterface.Id;
-                string description = wlanIface.NetworkInterface.Description;
-                string macAddress = ConvertAddressBytesToString(wlanIface.NetworkInterface.GetPhysicalAddress().GetAddressBytes());
-                interfaceList.Add(new WifiInterface(id, description, macAddress));
-            }
-            return interfaceList;
-        }
-
-        static public Scan ScanWifiSignals(WifiInterface wifiInterface)
-        { 
-            List<Reading> readingList = new List<Reading>();
-            Scan scan = new Scan(DateTime.UtcNow, readingList);
-            if (wifiInterface != null && !String.IsNullOrEmpty(wifiInterface.ID))
-            {
-                try
-                {
-                    WlanClient.WlanInterface wlanIface = GetNetworkInterfaceFromId(wifiInterface.ID);
-                    Wlan.WlanBssEntry[] wlanBssEntries = wlanIface.GetNetworkBssList();
-                    foreach (Wlan.WlanBssEntry wlanBssEntry in wlanBssEntries)
-                    {
-                        string mac = ConvertAddressBytesToString(wlanBssEntry.dot11Bssid);
-                        string ssid = Encoding.ASCII.GetString(wlanBssEntry.dot11Ssid.SSID, 0, (int)wlanBssEntry.dot11Ssid.SSIDLength);
-                        int rssi = wlanBssEntry.rssi;
-                        if (rssi > 0)
-                        {
-                            rssi -= 255;
-                        }
-                        Reading reading = new Reading(mac, ssid, rssi);
-
-                        readingList.Add(reading);
-                    }
-                    readingList.Sort();
-                }
-                catch
-                {
-                    // Do nothing.
-                }
-            }
-            return scan;
-        }
-
-        static public List<WifiSignalStrength> ScanForSignalStrengths(WifiInterface wifiInterface)
-        {
-            List<WifiSignalStrength> signalStrengthList = new List<WifiSignalStrength>();
-            if (wifiInterface != null && !String.IsNullOrEmpty(wifiInterface.ID))
-            {
-                try
-                {
-                    WlanClient.WlanInterface wlanIface = GetNetworkInterfaceFromId(wifiInterface.ID);
-                    Wlan.WlanBssEntry[] wlanBssEntries = wlanIface.GetNetworkBssList();
-                    foreach (Wlan.WlanBssEntry wlanBssEntry in wlanBssEntries)
-                    {
-                        string mac = ConvertAddressBytesToString(wlanBssEntry.dot11Bssid);
-                        string ssid = Encoding.ASCII.GetString(wlanBssEntry.dot11Ssid.SSID, 0, (int)wlanBssEntry.dot11Ssid.SSIDLength);
-                        int rssi = wlanBssEntry.rssi;
-                        if (rssi > 0)
-                        {
-                            rssi -= 255;
-                        }
-                        WifiSignalStrength signalStrength = new WifiSignalStrength(ssid, mac, rssi);
-                        signalStrengthList.Add(signalStrength);
-                    }
-                    signalStrengthList.Sort();
-                }
-                catch { 
-                    // Do nothing.
-                }
-            }
-            return signalStrengthList;
-        }
-    }
 }
